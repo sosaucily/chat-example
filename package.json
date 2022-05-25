@@ -6,6 +6,7 @@
     "dotenv": "^16.0.0",
     "ethers": "^5.6.5",
     "express": "^4.17.1",
+    "node-fetch": "^2.6.7",
     "socket.io": "^4.1.2"
   },
   "scripts": {

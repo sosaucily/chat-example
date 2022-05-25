@@ -6,7 +6,7 @@ const http = require('http').Server(app);
 const io = require('socket.io')(http);
 const { ethers } = require("ethers");
 
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 8000;
 
 const abi = require('./ABIs/DiscreetLog.json');
 
@@ -27,15 +27,12 @@ app.get('/', (req, res) => {
 
 console.log(`Listening to events on ${address} \n`);
 
-provider.on("block", (blockNumber) => {
-  io.emit('eth event', `New block: ${blockNumber}`);
-})
-
-const createDLC = (feedAddress, closingTime, emergencyRefundTime, caller) => {
+async function createDLC(feedAddress, closingTime, emergencyRefundTime, caller) {
+  currencySymbol = await getCurrencyNameFromCLContractAddress(feedAddress)
   const body = {
     clFeedUrl: feedAddress,
-    currencySymbol: getCurrencyNameFromCLContractAddress(feedAddress),
-    currencyName: getCurrencyNameFromCLContractAddress(feedAddress),
+    currencySymbol: currencySymbol,
+    currencyName: currencySymbol,
     maturationTime: `${closingTime}T23:59:00.000Z`,
     strikePrice: 50,
   }
@@ -66,13 +63,9 @@ const createDLC = (feedAddress, closingTime, emergencyRefundTime, caller) => {
   }
 }
 
-const getCurrencyNameFromCLContractAddress = (address) => {
+async function getCurrencyNameFromCLContractAddress(address) {
   try {
-    const response = await fetch(process.env.CL_DATA_FEEDS_URL, {
-      // headers: {
-      //   "X-CMC_PRO_API_KEY": process.env.VUE_APP_CMC_PRO_API_KEY
-      // }
-    })
+    const response = await fetch(process.env.CL_DATA_FEEDS_URL)
     if (!response.ok) {
       // NOT res.status >= 200 && res.status < 300
       return { statusCode: response.status, body: response.statusText }
@@ -80,8 +73,11 @@ const getCurrencyNameFromCLContractAddress = (address) => {
     const data = await response.json()
     const networks = data['ethereum-addresses']['networks']
     const mainNetIndex = networks.findIndex(network => network['name'] == 'Kovan Testnet');
-    const entry = networks[mainNetIndex].findIndex(entry => entry['proxy'] == address);
-    return entry['pair'].split(" /")[0];
+    const entryIndex = networks[mainNetIndex]['proxies'].findIndex(entry => entry['proxy'] == address);
+    entry = networks[mainNetIndex]['proxies'][entryIndex];
+    pairName = entry['pair'].split(" /")[0];
+    console.log(pairName);
+    return pairName;
   } catch (error) {
     // output to netlify function log
     console.log(error)
@@ -93,9 +89,15 @@ const getCurrencyNameFromCLContractAddress = (address) => {
   }
 }
 
+provider.on("block", (blockNumber) => {
+  io.emit('eth event', `New block: ${blockNumber}`);
+  console.log(`New block: ${blockNumber}`);
+})
+
 contract.on("RequestCreateDLC", (feedAddress, closingTime, emergencyRefundTime, caller) => {
   const currentTime = new Date();
   io.emit('eth event', `New DLC request @ ${currentTime} \n\t feedAddr: ${feedAddress} | closingTime: ${closingTime} | emergencyRefundTime: ${emergencyRefundTime} | caller: ${caller} \n`);
+  console.log(`New DLC request @ ${currentTime} \n\t feedAddr: ${feedAddress} | closingTime: ${closingTime} | emergencyRefundTime: ${emergencyRefundTime} | caller: ${caller} \n`);
   const response = createDLC(feedAddress, closingTime, emergencyRefundTime, caller);
   console.log(response);
 });
@@ -103,17 +105,26 @@ contract.on("RequestCreateDLC", (feedAddress, closingTime, emergencyRefundTime, 
 contract.on("NewDLC", (uuid, feedAddress, closingTime, emergencyRefundTime) => {
   const currentTime = new Date();
   io.emit('eth event', `New DLC created @ ${currentTime} \n\t uuid: ${uuid} | feedAddr: ${feedAddress} | closingTime: ${closingTime} | emergencyRefundTime: ${emergencyRefundTime} \n`);
+  console.log(`New DLC created @ ${currentTime} \n\t uuid: ${uuid} | feedAddr: ${feedAddress} | closingTime: ${closingTime} | emergencyRefundTime: ${emergencyRefundTime} \n`);
 });
 contract.on("CloseDLC", (uuid, price, actualClosingTime) => {
   const currentTime = new Date();
   io.emit('eth event', `Closing DLC @ ${currentTime} \n\t uuid: ${uuid} | price: ${price} | actualClosingTime: ${actualClosingTime} \n`);
+  console.log(`Closing DLC @ ${currentTime} \n\t uuid: ${uuid} | price: ${price} | actualClosingTime: ${actualClosingTime} \n`);
 });
 contract.on("EarlyCloseDLC", (uuid, price, actualClosingTime) => {
   const currentTime = new Date();
   io.emit('eth event', `Early closing DLC @ ${currentTime} \n\t uuid: ${uuid} | price: ${price} | actualClosingTime: ${actualClosingTime} \n`);
+  console.log(`Early closing DLC @ ${currentTime} \n\t uuid: ${uuid} | price: ${price} | actualClosingTime: ${actualClosingTime} \n`);
 });
 
 http.listen(port, () => {
   console.log(`Socket.IO server running at http://localhost:${port}/`);
 });
 
+
+
+(async function main() {
+  const response = await createDLC("0x6135b13325bfC4B00278B4abC5e20bbce2D6580e", "2022-05-26", "2022-05-26", "0xasdfa");
+  console.log(response);
+})();
